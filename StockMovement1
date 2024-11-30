@@ -1,0 +1,113 @@
+import praw
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+import gradio as gr
+
+# Reddit API credentials
+CLIENT_ID = "WTX0oyGqfao_shOgjF0psw"
+CLIENT_SECRET = "n6A_hUK_TfBgGzN00yZKA27JzDeYig"
+USER_AGENT = "StockMovement/1.0 by SandwichCharming4204"
+
+# Authenticate with Reddit API
+def authenticate_reddit():
+    reddit = praw.Reddit(
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        user_agent=USER_AGENT
+    )
+    return reddit
+
+# Scrape posts from a subreddit
+def scrape_reddit(subreddit_name, limit=100):
+    reddit = authenticate_reddit()
+    subreddit = reddit.subreddit(subreddit_name)
+    posts = []
+    for post in subreddit.hot(limit=limit):
+        posts.append({'title': post.title, 'content': post.selftext, 'score': post.score, 'date': pd.to_datetime(post.created_utc, unit='s')})
+    return pd.DataFrame(posts)
+
+# Preprocess and classify posts
+def preprocess_and_classify(dataframe, model, vectorizer):
+    dataframe['processed_content'] = dataframe['content'].fillna("").str.lower()
+    X = vectorizer.transform(dataframe['processed_content'])
+    predictions = model.predict(X)
+    dataframe['sentiment'] = predictions
+    return dataframe
+
+# Train the sentiment analysis model
+def train_model():
+    data = pd.DataFrame({
+        'text': ['This stock is great!', 'Poor performance', 'Highly recommended!', 'Not worth the investment'],
+        'label': [1, 0, 1, 0]
+    })
+    X = data['text']
+    y = data['label']
+    vectorizer = CountVectorizer()
+    X_vect = vectorizer.fit_transform(X)
+    model = MultinomialNB()
+    model.fit(X_vect, y)
+    return model, vectorizer
+
+# Initialize the model and vectorizer
+model, vectorizer = train_model()
+
+# Create visualizations
+def create_visualizations(dataframe):
+    # Sentiment Distribution
+    plt.figure(figsize=(8, 6))
+    sns.countplot(data=dataframe, x="sentiment", palette="coolwarm")
+    plt.title("Sentiment Distribution")
+    plt.xlabel("Sentiment (0 = Negative, 1 = Positive)")
+    plt.ylabel("Count")
+    plt.tight_layout()
+    sentiment_distribution_path = "sentiment_distribution.png"
+    plt.savefig(sentiment_distribution_path)
+    plt.close()
+
+    # Sentiment Scores Over Time
+    if not dataframe.empty and 'date' in dataframe.columns:
+        plt.figure(figsize=(10, 6))
+        sns.lineplot(data=dataframe, x="date", y="score", hue="sentiment", marker="o", palette="coolwarm")
+        plt.title("Sentiment Scores Over Time")
+        plt.xlabel("Date")
+        plt.ylabel("Sentiment Score")
+        plt.legend(title="Sentiment", loc="upper left")
+        plt.tight_layout()
+        sentiment_scores_time_path = "sentiment_scores_time.png"
+        plt.savefig(sentiment_scores_time_path)
+        plt.close()
+
+    # Text Length vs Sentiment
+    dataframe["text_length"] = dataframe["content"].fillna("").apply(len)
+    plt.figure(figsize=(8, 6))
+    sns.boxplot(data=dataframe, x="sentiment", y="text_length", palette="coolwarm")
+    plt.title("Text Length by Sentiment")
+    plt.xlabel("Sentiment (0 = Negative, 1 = Positive)")
+    plt.ylabel("Text Length")
+    plt.tight_layout()
+    text_length_sentiment_path = "text_length_sentiment.png"
+    plt.savefig(text_length_sentiment_path)
+    plt.close()
+
+    return sentiment_distribution_path, sentiment_scores_time_path, text_length_sentiment_path
+
+# Gradio interface
+def analyze_sentiment(subreddit_name, limit=10):
+    posts_df = scrape_reddit(subreddit_name, limit)
+    result_df = preprocess_and_classify(posts_df, model, vectorizer)
+    sentiment_distribution, sentiment_scores_time, text_length_sentiment = create_visualizations(result_df)
+    return sentiment_distribution, sentiment_scores_time, text_length_sentiment
+
+gr.Interface(
+    fn=analyze_sentiment,
+    inputs=[gr.Textbox(label="Subreddit Name"), gr.Slider(10, 100, label="Number of Posts")],
+    outputs=[
+        gr.Image(label="Sentiment Distribution"),
+        gr.Image(label="Sentiment Scores Over Time"),
+        gr.Image(label="Text Length by Sentiment")
+    ],
+    title="Reddit Stock Sentiment Analyzer with Visualizations"
+).launch(share=True)
