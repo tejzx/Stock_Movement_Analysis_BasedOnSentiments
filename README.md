@@ -71,3 +71,6 @@ Future Enhancements
 Use a larger, more diverse training dataset for better classification.
 Add support for scraping multiple platforms (e.g., Twitter, Telegram).
 Introduce dynamic, interactive visualizations with libraries like Plotly.
+
+License
+This project is open-source and available under the MIT License.
